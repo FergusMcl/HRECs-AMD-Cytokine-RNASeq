@@ -2,157 +2,174 @@
 title: "HRECs-AMD-Cytokine-RNASeq"
 author: "Fergus McLellan"
 date: "`r Sys.Date()`"
-output: html_document
+output:
+  html_document: default
+  pdf_document: default
 ---
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
-setup space and load data
+## Setup Space and Load Data
   
-  clear space
+ clear space
 
-```{r}
+```{r settings}
 rm(list = ls(all.names = TRUE))
 gc()
 options(max.print = .Machine$integer.max, scipen = 999, stringsAsFactors = F, dplyr.summarise.inform = F)
 ```
 
+
+
 setwd("C:/Users/User/OneDrive - UNSW/Desktop/Honours/")
+
 set.seed(12345)
 
-load packages
-```{r}
+Load initial packages and paths
+
+```{r paths}
 library(tidyverse) #tidyverse used for code cleanliness and general functions
+
+in_path <- "C:/Users/User/OneDrive - UNSW/Desktop/Honours/raw_data/" #set input path
+out_path = "C:/Users/User/OneDrive - UNSW/Desktop/Honours/fibrosis_figure_panel/significant_data/" # set output path
 ```
 
+# DESeq2 ----------------------------------------------------
+
+
 Differential expression analysis using DESEQ2
+
 There are 3 objects required for DESeq to run properly.
 
-1.A matrix of counts, with one 1 set of labels (Ensembl ID in this case) as the row name
+1.A Counts matrix, with one 1 set of labels (Ensembl ID in this case) as the row name
+
+2. A Design factor with 1 level per treatment, and repetitions = n
+
+3. A colData data frame containing a column reflecting the design
+
+
+ 1. Counts matrix
 
 ```{r}
-in_path <- "fibrosis_figure_panel/raw_data/" #set input path
-out_path = "fibrosis_figure_panel/significant_data/" # set output path
-
 Counts <-read.delim(paste0(in_path,"raw_counts.csv"), header = TRUE, row.names = 1, sep = ",")
 
 Counts <- as.matrix(Counts[,1:48])
 
-fibro_data <- as.matrix(Counts[,1:30])
-
-inflam_data <- as.matrix(Counts[,c(1:6,19:36)])
-angio_data <- as.matrix(Counts[,c(1:6,13:18,25:30,37:42)])
-individuals_data <- as.matrix(Counts[,1:42])
-
-data <- as.matrix(Counts[,c(1:6,13:30,43:48)])
-
 head(Counts)
 ```
 
-2. A Design factor with 1 level per treatment, and repetitions = n
-
-# Data import and Conditions to be investigated -------------------------------------------
-
-```{r}
-
-condition <- factor(c(rep("Control", 6),rep("ALL", 6) ) )
-
-individuals_condition <- factor(c(rep("Control", 6), rep("TGFb1", 6), rep("TGFb2", 6), rep("TNFa", 6), rep("Thrombin", 6) , rep("IL6", 6), rep("VEGF", 6)))
-
-important_groups_condition <- factor(c(rep("Control", 6), rep("TGFb2", 6), rep("TNFa", 6), rep("Thrombin", 6), rep("ALL", 6)))
-
-fibro_condition <- factor(c(rep("Control", 6), rep("TGFb1", 6), rep("TGFb2", 6), rep("TNFa", 6), rep("Thrombin", 6) ) )
-
-inflam_condition <- factor(c(rep("Control", 6), rep("TGFb1", 6), rep("TNFa", 6), rep("Thrombin", 6) , rep("IL6", 6) ) )
-
-angio_condition <- factor(c(rep("Control", 6), rep("TGFb2", 6), rep("Thrombin", 6) ,rep("VEGF", 6) ) )
-
-levels(important_groups_condition)
-```
-# Condition Generator Function ----------------------------------------------------
-
-3. a column data dataframe object elucidating the point of reference for comparisons.
-
-In this case, I have generated a function which allows for a few preset analyses of interest.
-
+  2 & 3
+    In this case, I have generated the function which allows for a few preset analyses of interest so as to keep the       global environment neat.
 
 ```{r}
+
 #Possible comparison types: all_groups, fibro, inflam, angio, single *IF SINGLE MUST ALSO IDENTIFY TREATMENT*
 
+metadatapicker <- function(comparisontype, treatment = NULL){
+
   
-  coldatapicker <- function(comparisontype, treatment = NULL){
+  
+  if(comparisontype == "important"){
+    condition <- factor(c(rep("Control", 6), rep("TGFb2", 6), rep("TNFa", 6), rep("Thrombin", 6), rep("ALL", 6)))
+    coldata <- data.frame(condition)
+    coldata$condition <- relevel(coldata$condition, ref = "Control")
     
-    condition <- factor(c(rep("Control", 6), rep(treatment, 6)))
+    # All Condition ---------------------------------------------------------
+  
+    }else if (comparisontype == "all"){
     
+    condition <- factor(c(rep("Control", 6), rep("TGFb1", 6), rep("TGFb2", 6), rep("TNFa", 6), rep("Thrombin", 6) , rep("IL6", 6), rep("VEGF", 6), rep("ALL", 6)))
+    coldata <- data.frame(condition)
+    coldata$condition <- relevel(coldata$condition, ref = "Control")    
     
-    if(comparisontype == "important"){
-      
-      coldata <- data.frame(important_groups_condition)
-      coldata$important_groups_condition <- relevel(coldata$important_groups_condition, ref = "Control")
-      
-      
-      # Fibro Condition ---------------------------------------------------------
+    # Fibro Condition ---------------------------------------------------------
+  
     }else if (comparisontype == "fibro"){
-      
-      coldata <- data.frame(fibro_condition)
-      coldata$fibro_condition <- relevel(coldata$fibro_condition, ref = "Control")
-      
-      
-      # Inflam Condition --------------------------------------------------------
+    
+    condition <- factor(c(rep("Control", 6), rep("TGFb1", 6), rep("TGFb2", 6), rep("TNFa", 6), rep("Thrombin", 6)))
+    coldata <- data.frame(condition)
+    coldata$condition <- relevel(coldata$condition, ref = "Control")   
+    
+    # Inflam Condition --------------------------------------------------------
+  
     }else if (comparisontype == "inflam"){
-      
-      coldata <- data.frame(inflam_condition)
-      coldata$inflam_condition <- relevel(coldata$inflam_condition, ref = "Control")
-      
-      
-      # Angio Condition ---------------------------------------------------------
+    
+    condition <- factor(c(rep("Control", 6), rep("TGFb1", 6), rep("TNFa", 6), rep("Thrombin", 6) , rep("IL6", 6)))
+    coldata <- data.frame(condition)
+    coldata$condition <- relevel(coldata$condition, ref = "Control")    
+    
+    # Angio Condition ---------------------------------------------------------
+  
     }else if (comparisontype == "angio"){
-      
-      coldata <- data.frame(angio_condition)
-      coldata$angio_condition <- relevel(coldata$angio_condition, ref = "Control")
-      
-
-      # All individuals ---------------------------------------------------------
-      
+    
+    condition <- factor(c(rep("Control", 6), rep("TGFb2", 6), rep("Thrombin", 6) ,rep("VEGF", 6)))
+    coldata <- data.frame(condition)
+    coldata$condition <- relevel(coldata$condition, ref = "Control")    
+    
+    # Individuals only (no cocktail) ---------------------------------------------------------
+    
     }else if (comparisontype == "individuals"){
-      
-      coldata <- data.frame(individuals_condition)
-      coldata$individuals_condition <- relevel(coldata$individuals_condition, ref = "Control")
-      
-      
-      # Single Comparison Condition ---------------------------------------------
-      
+    condition <- factor(c(rep("Control", 6), rep("TGFb1", 6), rep("TGFb2", 6), rep("TNFa", 6), rep("Thrombin", 6) , rep("IL6", 6), rep("VEGF", 6)))
+    coldata <- data.frame(condition)
+    coldata$condition <- relevel(coldata$condition, ref = "Control")
+    
+    
+    # Single Comparison Condition ---------------------------------------------
+  
     }else if (comparisontype == "single"){
+    
       if(!is.null(treatment)){
-        coldata <- data.frame(condition)
-        coldata$condition <- relevel(coldata$condition, ref = "Control")
+      condition <- factor(c(rep("Control", 6), rep(treatment, 6)))
+      coldata <- data.frame(condition)
+      coldata$condition <- relevel(coldata$condition, ref = "Control")
+    
       }else{
-        print("Please select a treatment for your single comparison. Returning only Control group in data frame")
-      }
-      
-      
-    }else{
-      print("Invalid selection. Please choose from the list of possible comparisons.")
-      return(NULL)
-    }
-    return(coldata)  
+      print("Please select a treatment for your single comparison. Returning only Control group in data frame")
+        }
+  
+      }else{
+    print("Invalid selection. Please choose from the list of possible comparisons.")
+    return(NULL)
   }
+  
+  return(list("condition" = condition, "coldata" = coldata))
 
-
-
-coldata <- coldatapicker(comparisontype = "important",treatment = )
-
-condition <- important_groups_condition
-
-ddsCounts <- data
-
-
+}
 ```
+
+Use function to set meta data 
+allows: all, individuals, fibro, inflam, angio and single* 
+  *single comparisons requires selection of the treatment of interest
+
+
+assign a list for the meta data objects and split this list to give a condition factor and coldata dataframe object
+```{r}
+metadata <- metadatapicker(comparisontype = "all",
+                         treatment =
+                          ) %>%
+               list2env(.GlobalEnv)
+```
+
+2. Condition factor
+
+```{r}
+levels(condition)
+```
+3. colData data frame
+
+```{r}
+head(coldata)
+```
+
 
 Next, it is best practice to clean the data to remove any NA values, or unusable counts.
 For this I have used the WGCNA package goodSamplesGenes function.
 
 ```{r}
+
+ddsCounts <- data
+
 library(WGCNA)
 
 
@@ -198,6 +215,9 @@ rowSums(res_norm2)
 write.csv(res_norm, file = paste0(out_path,"important_groups_ggs_nocutoff_normalised_001.csv"))
 ```
 
+```{r}
+
+```
 
 
 
