@@ -4,25 +4,51 @@ author: "Fergus McLellan"
 date: "`r Sys.Date()`"
 output:
   html_document: default
+  fig_width: 6
+  fig_height: 6
+  pdf_document: default
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
+# Load necessary libraries
+setwd("C:/Users/User/Desktop/HRECs-AMD-Cytokine-RNASeq")
+library(tidyverse)  # Contains multiple packages for general tidiness
+library(magrittr)   # Package adding useful functions for pipe operator
+library(dtplyr)     # Package adding useful functions for pipe operator
+library(textshaping)
+library(DESeq2)      # Differential Expression Analysis
+library(WGCNA)       # Weighted Gene Coexpression Network Analysis + Good Gene Check
+library(RColorBrewer)# Color palettes
+library(ggplot2)     # General Plotting package
+library(pheatmap)    # Heatmaps
+library(EnhancedVolcano) #volcano plots
+library(ggrepel)     # Text and point repel
+library(svglite)     # Save SVGs
+library(org.Hs.eg.db)# Gene Annotation package
+library(GOplot)      # GO Chord plotting
+library(enrichplot)  # Enrichment plotting
+library(patchwork)   # Figure combination package
 
+set.seed(12345)
+
+```
+# Introduction
+
+This R Markdown outlines the steps undertaken to perform differential expression and pathway analysis for the investigation of cytokine and DMFU-incuded signalling in HRECs.
 # Setup Work Space
 
 To begin, I load tidyverse and run some code to clear my environment and set my desired information printing parameters
 
-```{r}
+```{r, message = FALSE, warning = FALSE}
+
+#rm(list = ls(all.names = TRUE)) unhash to clear environment
+#gc() unhash to clear cache
+options(max.print = .Machine$integer.max, scipen = 999, stringsAsFactors = F, dplyr.summarise.inform = F) #sets integer limit to max
+
 library(tidyverse) #contains multiple packages for general tidiness
 library(magrittr) #package adding useful functions for pipe operator
 library(dtplyr) #package adding useful functions for pipe operator
 library(textshaping) 
-
-rm(list = ls(all.names = TRUE))
-gc()
-options(max.print = .Machine$integer.max, scipen = 999, stringsAsFactors = F, dplyr.summarise.inform = F)
 
 set.seed(12345)
 ```
@@ -38,19 +64,25 @@ out_path = "significant_data/" # set output path from working directory
 
 # Differential Expression Analysis
 
-The following section will describe the steps undertaken for intiial differential expression analysis, with the goal of producing: 1. Normalized counts 2. Principal component analysis 3. Significantly diferentially expressed gene lists
+The following section will describe the steps undertaken for initial differential expression analysis, with the goal of producing: 
+  1. Normalized counts 
+  2. Principal component analysis 
+  3. Significantly differentially expressed gene lists
 
-This data was then exported as .CSV files and used in [**morpheus**](https://software.broadinstitute.org/morpheus/) **to generate heatmaps** in *1B* and *1E* and [**biovenn**](https://www.biovenn.nl/index.php) **for Venn diagram generation** in *1D*.
+This markdown will use analysis in Part 2 as an example, however the same techniques were applied for Part 1 with names swapped to match experimental groups used (Control DMFu VEGF VEGFDMFu).
+
+This data was then exported as .CSV files and used in [**morpheus**](https://software.broadinstitute.org/morpheus/) **to generate count heatmaps** (*Figure 1B*) and [**biovenn**](https://www.biovenn.nl/index.php) **for venn diagram generation**.
+
 
 ## DESeq2
 
 Differential expression analysis using DESEQ2
 
-There are 3 objects required for DESeq to run properly.
+There are 3 objects required for DESeq to run properly:
 
 1.  A *Counts* matrix, with one 1 set of labels (Ensembl ID in this case) as the row name
 
-2.  A *Design factor* with 1 level per treatment, and repetitions = n
+2.  A *Design* factor with 1 level per treatment, and repetitions = n
 
 3.  A *colData* data frame containing a column reflecting the design
 
@@ -59,8 +91,6 @@ There are 3 objects required for DESeq to run properly.
 #### Counts matrix
 
 ```{r}
-library(DESeq2)
-
 Counts <-read.delim(paste0(in_path,"raw_counts.csv"), header = TRUE, row.names = 1, sep = ",")
 
 Counts <- as.matrix(Counts[,1:48])
@@ -70,50 +100,47 @@ head(Counts)
 
 #### Meta Data
 
-```         
-In this case, I have implemented a function to generate meta data based on the investigation I am performing so as to keep the global environment neat.
-```
+So as to keep the global environment neat, a custom function was written to generate meta data based on the investigation being performed.
 
 ```{r}
 
 #Possible comparison types: all_groups, fibro, inflam, angio, single *IF SINGLE MUST ALSO IDENTIFY TREATMENT*
-
 metadatapicker <- function(comparisontype, treatment = NULL){
-
+  
   
   
   if(comparisontype == "important"){
-    condition <- factor(c(rep("Control", 6), rep("TGFb2", 6), rep("TNFa", 6), rep("Thrombin", 6), rep("cocktail", 6)))
+    condition <- factor(c(rep("Control", 6), rep("TGFb2", 6), rep("TNFa", 6), rep("Thrombin", 6), rep("ALL", 6)))
     coldata <- data.frame(condition)
     coldata$condition <- relevel(coldata$condition, ref = "Control")
     
     # All Condition ---------------------------------------------------------
-  
-    }else if (comparisontype == "all"){
     
-    condition <- factor(c(rep("Control", 6), rep("TGFb1", 6), rep("TGFb2", 6), rep("TNFa", 6), rep("Thrombin", 6) , rep("IL6", 6), rep("VEGF", 6), rep("cocktail", 6)))
+  }else if (comparisontype == "all"){
+    
+    condition <- factor(c(rep("Control", 6), rep("TGFb1", 6), rep("TGFb2", 6), rep("TNFa", 6), rep("Thrombin", 6) , rep("IL6", 6), rep("VEGF", 6), rep("ALL", 6)))
     coldata <- data.frame(condition)
     coldata$condition <- relevel(coldata$condition, ref = "Control")    
     
     # Fibro Condition ---------------------------------------------------------
-  
-    }else if (comparisontype == "fibro"){
+    
+  }else if (comparisontype == "fibro"){
     
     condition <- factor(c(rep("Control", 6), rep("TGFb1", 6), rep("TGFb2", 6), rep("TNFa", 6), rep("Thrombin", 6)))
     coldata <- data.frame(condition)
     coldata$condition <- relevel(coldata$condition, ref = "Control")   
     
     # Inflam Condition --------------------------------------------------------
-  
-    }else if (comparisontype == "inflam"){
+    
+  }else if (comparisontype == "inflam"){
     
     condition <- factor(c(rep("Control", 6), rep("TGFb1", 6), rep("TNFa", 6), rep("Thrombin", 6) , rep("IL6", 6)))
     coldata <- data.frame(condition)
     coldata$condition <- relevel(coldata$condition, ref = "Control")    
     
     # Angio Condition ---------------------------------------------------------
-  
-    }else if (comparisontype == "angio"){
+    
+  }else if (comparisontype == "angio"){
     
     condition <- factor(c(rep("Control", 6), rep("TGFb2", 6), rep("Thrombin", 6) ,rep("VEGF", 6)))
     coldata <- data.frame(condition)
@@ -121,42 +148,49 @@ metadatapicker <- function(comparisontype, treatment = NULL){
     
     # Individuals only (no cocktail) ---------------------------------------------------------
     
-    }else if (comparisontype == "individuals"){
+  }else if (comparisontype == "individuals"){
     condition <- factor(c(rep("Control", 6), rep("TGFb1", 6), rep("TGFb2", 6), rep("TNFa", 6), rep("Thrombin", 6) , rep("IL6", 6), rep("VEGF", 6)))
     coldata <- data.frame(condition)
     coldata$condition <- relevel(coldata$condition, ref = "Control")
     
     
     # Single Comparison Condition ---------------------------------------------
-  
-    }else if (comparisontype == "single"){
     
-      if(!is.null(treatment)){
+  }else if (comparisontype == "single"){
+    
+    if(!is.null(treatment)){
       condition <- factor(c(rep("Control", 6), rep(treatment, 6)))
       coldata <- data.frame(condition)
       coldata$condition <- relevel(coldata$condition, ref = "Control")
-    
-      }else{
+      
+    }else{
       print("Please select a treatment for your single comparison. Returning only Control group in data frame")
-        }
-  
-      }else{
+    }
+    
+  }else{
     print("Invalid selection. Please choose from the list of possible comparisons.")
     return(NULL)
   }
   
-  return(list("condition" = condition, "coldata" = coldata))
-
+  return(list("condition" = condition, "coldata" = coldata,"name"= paste0(comparisontype,"_",treatment)))
+  
 }
 ```
 
-Use function to set meta data.
+Use function to set meta data. Allows:
+- all
+- individuals
+- important
+- fibro
+- inflam
+- angio
+- single*
 
-Allows: all, individuals, fibro, inflam, angio and single.
 
-(single comparisons requires selection of the treatment of interest)
+*single comparisons requires selection of the treatment of interest
 
-Assign a list for the meta data objects and split this list to give a condition factor and coldata dataframe object
+
+Assign a list for the meta data objects and split this list to give a condition factor and coldata data frame object
 
 ```{r}
 metadata <- metadatapicker(comparisontype = "all",
@@ -181,7 +215,7 @@ unique(coldata)
 
 Next, it is good practice to clean the data, removing any NA values, or unusable counts. For this I have used the WGCNA package goodSamplesGenes function.
 
-```{r}
+```{r, message= FALSE, warning = FALSE}
 
 library(WGCNA, quietly = TRUE) #Weighted Gene Co-expression Analysis package containing GoodSamplesGenes check
 
@@ -203,27 +237,47 @@ ddsCounts <- ddsCounts[gsg$goodGenes == TRUE, gsg$goodSamples == TRUE] #omit bad
 ```
 
 ### Run DESeq2
-
-```{r}
+DESeq2 was utilised to perform repeated wald tests to identify significantly differentially expressed genes. Several output objects were generated for future use: 
+-   DESeq object
+-   Normalised counts data frame
+-   Averaged normalised counts data frame
+-   Variance stabilised counts data frame
+ 
+```{r, message = FALSE}
 dds <- DESeqDataSetFromMatrix(countData = ddsCounts, colData = coldata, design= ~condition)
 
 dds <- DESeq(dds)
-res <- results(dds) #results object
-nrow(res) #number of genes examined
+res <- results(dds) #results object example
+```
 
-head(res) #structure of results
+```{r, echo = FALSE}
+num <- nrow(res) #number of genes examined
 
-normcounts <- as.data.frame(counts(dds, normalized = TRUE)) #exportable normalised counts
+str <- head(res) #structure of results
 
+normcounts <- as.data.frame(counts(dds, normalized = TRUE)) #normalised counts
+
+print(paste0(num," genes examined, example results object:"))
+
+  str
+```
+Normalised counts can be exported as .csv for use in web tools, or as an RDS using:
+
+```{r}
+#saveRDS(dds, file= paste0(in_path,name,"dds.RDS"))  #unhash to save RDS
+```
+
+
+Generating an average, normalised counts data frame and variance stabilised
+transformation data frame
+```{r}
 avg_ncounts <- sapply(seq(1, ncol(normcounts), 6), function(j) rowMeans(normcounts[,j+(0:(5))])) %>% #sequences along columns and averages every 6 columns
-  as.data.frame()%>% #represents the result as a dataframe
+  as.data.frame()%>% #represents the result as a data frame
   set_colnames(levels(condition)) #sets the column names to match the levels of condition
 
 
 vsdata <- vst(dds, blind= FALSE) #variance stablising transformation for PCA
-vscounts <- assay(vsdata) #varaince stabilised counts
-
-
+vscounts <- assay(vsdata) #variance stabilised counts
 
 ```
 
@@ -241,10 +295,10 @@ library(svglite) #save SVGs
 
 ### Plot PCA in ggplot
 
-Generate PCA
+Generate PCA using ggplot2 **plotPCA**
 
-```{r}
-PCA <- plotPCA(vsdata, intgroup = "condition")+
+```{r, message = FALSE, warning = FALSE}
+PCA <- plotPCA(vsdata, intgroup = "condition", ntop = 1000)+
   theme_bw()+ #base theme
   coord_equal(3)+ #set a plot size
   labs(title = "Figure 1A", color = "Condition")+ #labels
@@ -254,11 +308,16 @@ PCA <- plotPCA(vsdata, intgroup = "condition")+
         legend.spacing = unit(2, "cm"),
         legend.key.size = unit(1.2, "lines"),
         legend.background = element_rect(fill = ,linewidth = 1, linetype ="solid", colour = "darkgrey"))
+```
 
+```{r, echo = FALSE}
 PCA
 ```
 
-Further style changes were made in an external vector editor to increase figure legibility, these include: - Adding of ellipses bounding points - Adjustments to color scheme - Omission of cocktail group
+Further style changes were made in an external vector editor to increase legibility for **Figure 1A**, these include: 
+  - Adding of ellipses bounding points 
+  - Adjustments to color scheme 
+  - Removal of cocktail group
 
 ### Numerical PCA
 
@@ -282,8 +341,1049 @@ ggplot(pca.dat, aes(PC1, PC2)) + #check that the PCA being assessed is similar t
        y = paste0('PC2: ', pca.var.percent[2], ' %'),
   )
 
-kruskal.test(pca.dat$PC1 ~ condition)
-kruskal.test(pca.dat$PC2 ~ condition) 
+P1 <- kruskal.test(pca.dat$PC1 ~ condition)
+```
+```{r, echo = FALSE}
+P1
+```
+```{r}
+P2 <- kruskal.test(pca.dat$PC2 ~ condition) 
+```
+```{r, echo = FALSE}
+P2
+```
+
+## Significance Check
+
+Custom, loopable function to export a .csv of DESeq2 log~2~ Fold Change, with additional introduced columns: 
+- HGNC gene symbols 
+- ENTREZ gene IDs 
+- Differential expression status (UP, Down or NO) referencing adjustable limits
+
+```{r}
+library(org.Hs.eg.db) #read in annotation DBI human database
 
 
+significance <- function(condition, treatment, Padj = 0.05, L2FC = 0, version){
+
+  library(DESeq2)
+  
+  res <- results(dds, contrast = c(condition,treatment, "Control"), ) 
+  
+  sigdeg_df<- as.data.frame(res) #generate results data frame
+  
+  sigdeg_df$symbol<- mapIds(org.Hs.eg.db,
+                            keys = rownames(sigdeg_df), 
+                            keytype = "ENSEMBL", column = "SYMBOL") #gene symbols
+  sigdeg_df$ENTREZID<- mapIds(org.Hs.eg.db, 
+                              keys = rownames(sigdeg_df), 
+                              keytype = "ENSEMBL", column = "ENTREZID") #ENTREZ IDs
+  
+  sigdeg_df <- sigdeg_df %>% 
+    mutate(diffexpressed = case_when(
+      log2FoldChange > +(L2FC) & padj < Padj ~ 'UP', #check if up regulated
+      log2FoldChange < -(L2FC) & padj < Padj ~ 'DOWN', #check if down regulated
+      padj > Padj ~ 'NO', #check if not significant
+      TRUE ~ 'NO' #Label anything else as this (good for troubleshooting)
+    ))
+  sigdeg_df <- sigdeg_df[sigdeg_df$diffexpressed != "NO",]
+  
+  
+  write.csv(sigdeg_df, file = paste0(out_path,treatment,"_deg_table_",version,".csv"))
+  
+  print(paste0(treatment," DEG Table with L2FC cut-off = ",L2FC," and adjusted p=value cut-off = ",Padj," generated in ",out_path,"."))
+
+  }
+
+```
+
+When running the function, ensure a condition has been established using *metadatapicker*
+
+```{r, warning = FALSE}
+
+#significance(condition = "condition",
+            #treatment = "ALL", 
+             #L2FC = 1,
+             #Padj = 0.05,
+            #version = "0L2FC_cutoff_003")
+
+
+cytokines <- c("TGFb1","TGFb2","TNFa","Thrombin","IL6","VEGF","ALL")
+
+for (cytokine in cytokines) {
+  significance(condition = "condition",
+               treatment = cytokine,
+               L2FC = 1,
+               Padj = 0.05,
+               version = "1L2FC_nobaseMean_cutoff_004")
+  }
+
+```
+
+## Volcano Plots
+
+Here, I utilise *enhancedVolcano* to generate a volcano plot, with the top 10 highest log~2~ Fold Change DEGs labelled.
+
+This code will function irrespective of if above **Significance Check** has been run.
+
+First, read in results object for comparison to be plotted
+
+unhash function lines (397 + 487) to 
+
+```{r}
+library(EnhancedVolcano)
+cytokine = "TGFb2"
+version = "001"
+
+#volcanomaker <- function(cytokine,version){
+  set.seed(12345)
+
+  res <- results(dds, contrast = c("condition", cytokine, "Control"))
+  sigdeg <- na.omit(res)
+  
+  sigdeg_df<- as.data.frame(sigdeg)
+
+```
+
+Next, label with HGNC symbols, and assign Up, Down and NS labels with colors associated based on volcano plot parameters. This is not required in enhancedVolcano as the package will identify and label based on *Pcutoff* and *Fcutoff* values, however allows for the custom colour filtering used later.
+
+```{r, message = FALSE}
+ 
+#Labelling system
+  sigdeg_df$symbol<- mapIds(org.Hs.eg.db,
+                            keys = rownames(sigdeg_df), 
+                            keytype = "ENSEMBL", 
+                            column = "SYMBOL")
+  
+  sigdeg_df <- sigdeg_df %>% 
+    mutate(diffexpressed = case_when(
+      log2FoldChange > 1 & padj < 0.05 ~ "UP",
+      log2FoldChange < -1 & padj < 0.05 ~ "DOWN",
+      between(sigdeg_df$log2FoldChange, -1, 1) ~ "NO",
+      padj > 0.05 ~ 'NO',
+  ))
+  
+  sigdeg_df$padj <- ifelse(sigdeg_df$padj == 0, .Machine$double.xmin, sigdeg_df$padj) #ifelse to replace 0 values in padj with machine minimum
+
+keyvals <- ifelse(sigdeg_df$diffexpressed == "DOWN", 'royalblue',
+                  ifelse(sigdeg_df$diffexpressed == "UP", 'red2','grey'))
+
+names(keyvals)[keyvals == 'royalblue'] <- 'Down-Regulated'
+names(keyvals)[keyvals == 'red2'] <- 'Up-Regulated'
+names(keyvals)[keyvals == "grey"] <- 'NS'
+
+```
+
+Select a certain number of DEGs to be labelled, this section of code can be lengthened to slice separately for up and down-regulated genes by pulling separate slices based on *sigdeg_df$diffexpressed* value. Here, the top 10 overall were selected.
+
+```{r}
+
+selected <- sigdeg_df %>%
+  arrange(desc(abs(log2FoldChange))) %>%
+  filter(diffexpressed != 'NO')%>%
+  filter(!is.na(symbol))%>%
+  dplyr::slice(1:10)
+```
+
+Generate volcano plot with no labels
+
+```{r, echo= FALSE, fig.dim=c(12,12)}
+volc <- EnhancedVolcano(sigdeg_df, 
+                        x = "log2FoldChange", 
+                        y = "padj", 
+                        lab = NA,  # Remove labels for now
+                        title = cytokine, #title to match cytokine
+                        colCustom = keyvals, #set colours to match keyed values
+                        pCutoff = 0.05, # p-value cutoff abline
+                        FCcutoff = 1, # Fold change cutoff abline
+                        ylim = c(-2, 320), # Y-axis limits (set to machine limit)
+                        xlim = c(-10, 10),  # Widen x-axis limits
+                        pointSize = 4.0, #size of points
+                        parseLabels = TRUE, 
+                        max.overlaps = 25)  # Allow more overlaps
+
+volc
+```
+
+Append down-regulated labels
+
+```{r, fig.dim=c(50,70)}
+# Add labels using geom_text_repel
+volc2 <- volc + geom_label_repel(data = sigdeg_df[sigdeg_df$log2FoldChange < -1 & sigdeg_df$padj <0.05 & sigdeg_df$symbol %in% selected$symbol, ], #labels negative DEGs in 'selected'
+                                 aes(x = log2FoldChange, y = -log10(padj), label = symbol),
+                                 size = 5,
+                                 label.size = 0.1,
+                                 box.padding = 1.0,  # Increase box padding
+                                 point.padding = 0.5,  # Increase point padding
+                                 segment.color = 'black',
+                                 segment.size = 0.8,
+                                 nudge_x = -2,
+                                 max.time = 5,
+                                 fill = "lightblue",
+                                 nudge_y = 0.5,# Nudge labels to the left
+                                 max.overlaps = 30)  # Ensure all labels are shown
+
+```
+```{r, echo= FALSE, fig.dim=c(12,12)}
+volc2
+```
+
+Append up-regulated labels
+
+```{r, fig.dim=c(50,70)}
+# Add labels for points with positive log2FoldChange
+
+volc3 <- volc2 + geom_label_repel(data = sigdeg_df[sigdeg_df$log2FoldChange > 1 & sigdeg_df$padj <0.05 & sigdeg_df$symbol %in% selected$symbol, ], #labels postive DEGs in 'selected'
+                                  aes(x = log2FoldChange, y = -log10(padj), label = symbol),
+                                  size = 5,
+                                  label.size = 0.1,
+                                  box.padding = 1,  # Increase box padding
+                                  point.padding = 0.5,  # Increase point padding
+                                  segment.color = 'black',
+                                  fill = "#FF9999",
+                                  segment.size = 0.8,
+                                  nudge_x = 1,
+                                  max.time = 5, # Nudge labels to the right
+                                  max.overlaps = 30)  # Ensure all labels are shown
+
+```
+```{r, echo= FALSE, fig.dim=c(12,12)}
+volc3
+```
+
+Save and print text to show code has run through (good for if using a function)
+
+```{r}
+ggsave(file =paste0(out_path,cytokine,"_volcano_001.svg"), 
+       plot=volc3, #plot
+       width=13,   #width
+       height=15)  #height
+
+print(paste0("Volcano plot generated for ",cytokine,"."))
+#}
+
+```
+
+```{r}
+
+#volcanomaker(cytokine = "TNFa", version = "001")
+
+```
+
+# Functional Analyses
+
+The following sections of code outline packages used and steps undertaken to identify biological themes and pathways enriched by each treatment. This includes:
+
+ 1. Over Representation Analysis
+ 2. Gene Set Enrichment Analysis
+ 3. Phenotype and pathway of interest filtering
+ 
+## Over-Representation Analysis
+
+Pathway enrichment was performed in **clusterProfiler**, both by direct referencing to downloaded GMT files as well as integrated referencing through **clusterProfiler**.
+
+
+### Custom .GMT ORA
+First, a pathway was assigned to reference lists folder.
+
+```{r}
+
+ref_path <- "reference_data/"
+
+```
+
+Next, a background gene list was generated, using all HGNC/NCBI named genes in the raw data file.
+
+```{r, message = FALSE}
+library('org.Hs.eg.db')
+library('clusterProfiler')
+
+bg <- read.csv(paste0(in_path,"raw_counts.csv"), header = TRUE)
+rownames(bg) <- bg$ID
+bg <- bg[,c(1,48)]
+bg <- bg %>%
+  mutate("symbol" = mapIds(org.Hs.eg.db,
+                         keys = rownames(bg), 
+                         keytype = "ENSEMBL", 
+                         column = "SYMBOL"))%>%
+  mutate("ENTREZ" = mapIds(org.Hs.eg.db,
+                         keys = rownames(bg), 
+                         keytype = "ENSEMBL", 
+                         column = "ENTREZID"))
+  
+bg <- na.omit(bg) %>%
+  dplyr::select(ID, ENTREZ, symbol)
+
+bgnames <- bg$symbol
+
+```
+
+GMT files were downloaded from www.gsea-msigdb.org, and a loop was used to identify and create an RDS of overlapping genes between GMT and background list for easier reference.
+
+
+```{r, eval = FALSE}
+
+    #subset genes in background from genes in gmt files, 
+          #these ones are from www.gsea-msigdb.org below uses a loop to identify and then make a new file containing gene subset
+
+    
+     gmt_files <- list.files(path = ref_path, pattern = '.gmt', full.names = TRUE)
+    for (i in gmt_files){
+      file <- gmt_files[i] #set a variable for position in list
+      pwl <- read.gmt(file) 
+      pwl <- pwf[pwf$gene %in% bgnames,]
+      filename <- paste(gsub('c2.cp\\.', '', 
+                             gsub('.v2023.2.*$', '', file)), '.RDS', sep = '') #assumes you are using 2023.2. files
+      saveRDS(pwf, filename)
+    }
+
+      #NOTE: only need to do this once, have to manually rename RDS files to source.RDS as I can't figure out how to do it automatically
+      #NOTE: genes may have multiple functions in the same GSEA set, therefore pwl may have more genes than your background set
+      #NOTE: have to delete RDS files if you want to run it twice.
+
+```
+
+A custom function was written to then read in a chosen RDS, run over-representation analysis for up and down regulated significant DEGs at specified limits for a specified treatment, clean pathway names, and output a .CSV and dot plot of findings.
+
+```{r, warning = FALSE}
+
+
+clusteranalysis <- function(cytokine, path_base, padj_cutoff, genecount_cutoff){
+
+  
+   #import dataset
+  file_names <- list.files(path = in_path, pattern = cytokine, full.names = TRUE)
+  
+  # Loop through the file names
+  for (file_name in file_names) {
+    # Read the file
+    df <- read.csv(file_name)
+    
+    # Perform operations on 'df'
+  }
+      
+    
+  ##Begin code for cluster analysis
+  
+  #Select RDS based on top
+     if(path_base == 'KEGG'){
+       bg_genes <- readRDS(paste0(ref_path, 'kegg_medicus.RDS'))
+       print("KEGG selected")
+     } else if(path_base == 'reactome'){
+       bg_genes <- readRDS(paste0(ref_path, 'reactome.RDS'))
+       print("reactome selected")
+     }else if(path_base == 'biocarta'){
+       bg_genes <- readRDS(paste0(ref_path, 'biocarta.RDS'))
+       print("biocarta selected")
+     } else if(path_base == 'pid'){
+       bg_genes <- readRDS(paste0(ref_path, 'pid.RDS'))
+       print("PID selected")
+     } else if(path_base == 'wikipathways'){
+       bg_genes <- readRDS(paste0(ref_path, 'wikipathways.RDS'))
+       print("wikipathways selected")
+     } else {
+       stop('Invalid background genes.')
+     }
+    
+    #ensure no non-significant DEGs
+  df <- df[df$diffexpressed!= 'NO',]
+  
+  
+      #split dataset into 2 lists
+  deg_results_list <- split(df, df$diffexpressed)
+  
+  deg_down <- deg_results_list$DOWN
+  deg_up <- deg_results_list$UP
+  
+  #Run clusterprofiler
+    #set output path
+  name_of_comparison <- paste0(cytokine,"_vs_control")
+  filename <- paste0(out_path, 'clusterProfiler/', name_of_comparison, '_', path_base)
+    
+    #runs the enrichment analysis for up and down-regulated genes separately
+  
+  res <- lapply(names(deg_results_list),
+                function(x) enricher(gene = deg_results_list[[x]]$symbol,
+                                     TERM2GENE = bg_genes))
+  
+  
+      #assigns names from deg_results_list to results
+  
+    names(res) <- names(deg_results_list)
+  
+    #Convert the list of enrichResults for each sample_pattern to a dataframe with the pathways
+    
+  res_df <- lapply(names(res), function(x) rbind(res[[x]]@result))
+  names(res_df) <- names(res)
+  res_df <- do.call(rbind, res_df)
+  
+  head(res_df)
+  
+  res_df <- res_df %>% mutate(minuslog10padj = -log10(p.adjust),
+                              diffexpressed = gsub('\\.GOBP.*$|\\.KEGG.*$|\\.REACTOME.*$|\\.BIOCARTA.*$', '', rownames(res_df)))
+  
+# select only target pathways that meet preset parameters
+target_pws <- unique(res_df$ID[res_df$p.adjust < padj_cutoff & res_df$Count > genecount_cutoff])
+
+res_df <- res_df[res_df$ID %in% target_pws,]
+
+#long list of substitutions I found online which neaten the descriptions
+res_df$Description <- gsub('(H|h)iv', 'HIV', 
+                           gsub('pd 1', 'PD-1',
+                                gsub('ecm', 'ECM', 
+                                     gsub('(I|i)nterleukin', 'IL', 
+                                          gsub('(R|r)na', 'RNA', 
+                                               gsub('(D|d)na', 'DNA',
+                                                    gsub(' i ', ' I ', 
+                                                         gsub('(A|a)tp ', 'ATP ', 
+                                                              gsub('(N|n)adh ', 'NADH ', 
+                                                                   gsub('(N|n)ad ', 'NAD ',
+                                                                        gsub('t cell', 'T cell',
+                                                                             gsub('b cell', 'B cell',
+                                                                                  gsub('built from .*', ' (...)',
+                                                                                       gsub('mhc', 'MHC',
+                                                                                            gsub('mhc class i', 'MHC I', 
+                                                                                                 gsub('mhc class ii', 'MHC II', 
+                                                                                                      stringr::str_to_sentence(
+                                                                                                        gsub('_', ' ',  
+                                                                                                             gsub('BIOCARTA_|PID_|KEGG_MEDICUS_REFERENCE_|REACTOME_', '', res_df$Description)))))))))))))))))))
+print(paste0('Saving ', path_base,' clusterprofiler results for ',cytokine,"."))
+write.csv(res_df, paste0(filename, '_resclusterp.csv'), row.names = FALSE)
+
+if (nrow(res_df) > 0){
+
+enrichres <- new("enrichResult",
+                 readable = FALSE,
+                 result = res_df,
+                 pvalueCutoff = 0.05,
+                 pAdjustMethod = "BH",
+                 qvalueCutoff = 0.2,
+                 organism = "human",
+                 ontology = "UNKNOWN",
+                 gene = df$symbol,
+                 keytype = "SYMBOL",
+                 universe = unique(bg_genes$gene),
+                 gene2Symbol = character(0),
+                 geneSets = bg_genes)
+
+  dot <-dotplot(
+    enrichres,
+    x = "GeneRatio",
+    title = paste0(cytokine," enrichment in ", path_base),
+    orderBy = "x",
+    label_format = 30,
+    )
+print(dot)
+  ggsave(file =paste0(out_path,"/",cytokine,"_",path_base,"_enrichment_dotplot.svg"), plot=dot, width=10, height=14)
+  
+  } else{
+    print(paste0("no pathways were enriched for ",cytokine," in ",bg_genes))
+  }
+}
+
+cytokines <- c("thrombin", "TGFb2", "TGFb1", "TNFa")  # Replace with your actual cytokines
+path_base <- c("KEGG", "reactome", "biocarta", "pid", "wikipathways")
+
+clusteranalysis(cytokine = "TNFa",
+                path_base = "reactome",
+                padj_cutoff = 0.05,  # p-adjusted threshold, used to filter out pathways
+                genecount_cutoff = 5  # minimum number of genes in the pathway, used to filter out pathways
+)
+
+```
+
+Although useful in allowing a wide array of pathway databases to be investigated simultaneously, this method does not integrate effectively for visualisation, and was thus only run to assess if a treatment was eligible for ORA enrichment and assess the pathway categories reflected by major databases.
+
+### GOora and GOChord
+
+```{r, warning = FALSE, message = FALSE}
+
+library('GOplot')
+library(enrichplot)
+
+treatment = "TGFb2" #set treatment if not using function
+
+#GO <- function(treatment, version){ #unhash and collate lines till 1045 to use as a function
+
+
+
+#set file name (change path to change selection)
+  #will look for file names with an _ following, so robust against compound treatments
+  
+  file_name <- list.files(path = in_path, pattern = paste0(treatment,"_"), full.names = TRUE)
+  df <- read.delim(file_name, header = TRUE, sep = ",")
+
+GOora <- enrichGO(gene = df$symbol,
+        'org.Hs.eg.db', 
+        universe = bg$symbol,
+        minGSSize = 10,
+        keyType = "SYMBOL",
+        pAdjustMethod = "fdr",
+        ont = "BP",
+        pvalueCutoff = 0.01
+        )
+
+GOres <- as.data.frame(GOora@result) # split out results
+
+#write.csv(GOres, file =paste0(out_path,treatment,"_GO_results_padj0.01_",version,".csv"))
+```
+```{r, echo = FALSE}
+head (GOres)
+```
+
+The Chord diagram generated in GOplot requires a specific data structure.
+The following code will transform an enrichGO/KEGG/WP etc. object to a usable format for *GOChord()*
+
+```{r, warning = FALSE, fig.dim=c(15,15)}
+
+# Chord Diagram -----------------------------------------------------------
+
+  #create an object for Chord data and adjust to fit requirements to use GOChord
+
+    #Circle_dat object
+
+      #Terms
+      
+        ChordGO <- GOres%>%
+          dplyr::select(ID, Description, geneID, p.adjust)%>%
+          dplyr::mutate(new_column = "BP", .before = everything()) #if enrichment was performed in a specific ontology, 
+                                                                    #a column must be generated for this, even though it isn't read
+                                                                    #REMOVE THIS LINE IF USING ONT = 'ALL'
+        
+        #rename columns to fit GOChord setup
+
+        rownames(ChordGO) <- NULL
+        colnames(ChordGO)[1] <- "Category" #rename ONTOLOGY column to fit GOChord setup
+        colnames(ChordGO)[2] <- "ID"
+        colnames(ChordGO)[3] <- "Term"
+        colnames(ChordGO)[4] <- "Genes"
+        colnames(ChordGO)[5] <- "adj_pval"
+        
+        #change gene strings to be comma seperated factors (GOChord requirement)
+        
+        ChordGO$Genes <- str_replace_all(ChordGO$Genes, "/", ", ")
+        
+        ChordGO$Genes <- as.factor(ChordGO$Genes)
+
+      #Genes
+
+        #rename columns to fit GOChord setup
+        
+        genelist <- df%>%
+          dplyr::select(symbol, log2FoldChange, baseMean, stat, pvalue, padj)
+        colnames(genelist)[1] <- "ID"
+        colnames(genelist)[2] <- "logFC"
+        colnames(genelist)[3] <- "AveExpr"
+        colnames(genelist)[4] <- "t"
+        colnames(genelist)[5] <- "P.Value"
+        colnames(genelist)[6] <- "adj.P.Val"
+
+    #circle_dat object for GOChord
+        
+    circ <- circle_dat(ChordGO, genelist)
+
+  #Log Fold Change object    
+
+    LFC <-data.frame(ID = df$symbol, LogFC = df$log2FoldChange)
+
+  #Processes object
+    
+    set.seed(12345)
+    pairwise <- pairwise_termsim(GOora, showCategory = 10) #performs pairwise comparison of gene names in top 10 GO categories
+    termsim <- pairwise@termsim #create object of term simulation results
+    set.seed(12345)
+    km <- kmeans(termsim, centers = 3) # run K-means clustering on the termsim matrix, generally use K = sqrt(N)
+    km_res <- as.data.frame(km$cluster)
+    km_res <- km_res%>%
+      rename("cluster" = "km$cluster")%>%
+      rownames_to_column(var ="Description")%>%
+      arrange(cluster)
+
+  processes <- c(head(km_res$Description, 10)) #export a list of the 10 categories, now arranged into K means clusters
+
+chord <- chord_dat(circ, LFC, processes)
+
+GChor <- GOChord(chord, space = 0.01, 
+                 gene.order = 'logFC', 
+                 gene.space = 0.15, 
+                 gene.size = 3,
+                 border.size = 0,
+                 lfc.min = -2.5,
+                 lfc.max = 2.5)
+
+print(GChor)
+ggsave(file =paste0(out_path,treatment,"_GOChord_",version,".svg"), plot=GChor, width=22, height=20)
+
+print(paste0("Chord 1 Generated for ", treatment,"."))
+
+```
+
+
+### Clustered Process Map
+
+Although not shown in my thesis, a clustered process map is a great way to visualise the K means clustering performed
+
+```{r, warning = FALSE, message = FALSE, fig.dim=c(15,15)}
+# Clustered processes map -------------------------------------------------
+
+set.seed(12345)
+pairwise <- pairwise_termsim(GOora, showCategory = 30)
+termsim <- pairwise@termsim
+
+set.seed(12345)
+eplot <- emapplot(pairwise,
+                  showCategory = 30,
+                  node_label = 'all',
+                  cluster.params = list(cluster = TRUE, #cluster logic
+                                        legend = TRUE, #legend logic
+                                        label_words_n = 5, #number of words in label generation
+                                        method = stats::kmeans, #clustering method
+                                        n=4, #number of clusters (default is sqrt(nodes))
+                                        label_style = "ggforce" #options are shadowtext or ggforce
+                  ),
+                  edge.params = list(show = TRUE, #show connections logic
+                                     min = 0.2), #minimum connection strength
+                  layout.params = list(layout = 'kk' #layout style
+                  ),
+                  cex.params = list(category_node = 1, #node scale
+                                    category_label = 0.5, #node label size
+                                    line = 0.5, 
+                                    label_group = 1.5),
+                  highlight.params = list(),
+                  force = 2
+)
+
+print(eplot)
+ggsave(file =paste0(out_path,treatment,"_GOTerm_network_",version,".svg"), plot=eplot, width= 20, height=15)
+
+print(paste0("eplot 1 Generated for ", treatment,"."))
+
+#}
+
+#GO(treatment = "TNFa",
+   #version = "003")
+
+```
+
+## Gene Set Enrichment Analysis
+
+### Individual GSEA 
+
+GSEA code below runs all treatments in parallel, generating a list of GSEA objects.
+
+```{r GSEA Chunk, warning = FALSE, message = FALSE, fig.dim=c(12,12)}
+
+in_path <- "significant_data/"
+
+file_names <- list.files(path = paste0(in_path), pattern = "deg_table_0L2FC_cutoff", full.names = TRUE) #list all files for comparison
+
+gr<- lapply(file_names, function(file) {
+  data <- read.csv(file) #read in groups as a list
+})
+names(gr) <- c("Cocktail", "IL6", "TGFb1", "TGFb2", "Thrombin", "TNFa", "VEGF")
+
+gr <-  lapply(gr, function(df) { #must be labelled with with entrezID to allow for comparison
+  df %>%
+    mutate(ENTREZID = mapIds(org.Hs.eg.db,
+                             keys = df$X, 
+                             keytype = "ENSEMBL", 
+                             column = "ENTREZID")) %>%
+    filter(!is.na(ENTREZID))
+})
+
+##Order for GSEA
+
+genes <- lapply(gr, function(df) {
+  df <- df %>%
+    arrange(desc(log2FoldChange))
+  named_vector <- setNames(df$log2FoldChange, df$ENTREZID)
+  named_vector <- na.omit(named_vector)
+  return(named_vector)
+})
+
+names(genes) <- names(gr)
+
+# GO GSEA -----------------------------------------------------------------
+
+gsea <- lapply(genes,function(vec){
+  data <- gseGO(geneList = vec,
+                OrgDb = org.Hs.eg.db,
+                ont = "ALL",
+                pvalueCutoff = 0.05,
+                minGSSize = 10
+  )
+  return(data)
+})
+
+names(gsea) <- names(genes)
+
+dotpl <- lapply(names(gsea), function(df){
+  data <- gsea[[df]]
+  
+  if (nrow(data) == 0) {
+    message(paste("Data frame", df, "is empty and will be skipped."))
+    return(NULL)  # Return NULL for empty dataframes
+  }else{
+    
+    dot <- dotplot(data,
+                   color = "NES",
+                   x = "geneRatio",
+                   showCategory = 20,
+                   font.size = 24,
+                   label_format = 75,
+                   title = df)+ 
+      
+      #coord_flip()+ #uncomment to flip to portrait
+      
+      #facet_grid(~.sign,) + #uncomment to seperate activated and repressed
+      
+      theme(panel.spacing = unit(0.1, "cm",data = NULL),
+            aspect.ratio = 1/1,
+            axis.text.x = element_text(size = 12, angle = 90, vjust = 1, hjust = 1),  # Rotate y-axis labels
+            axis.title.x = element_text(size = 14),
+            axis.text.y = element_text(size = 10),
+            axis.title.y.left = element_text(vjust = 3),
+            legend.text = element_text(size = 8),  # Adjust legend text size
+            legend.title = element_text(size = 10),
+            geom_dotplot(binwidth = 10, dotsize = 1),
+      )
+    
+    return(dot)
+  }
+})
+```
+
+
+```{r, echo = FALSE,fig.dim=c(20,20)}
+library(patchwork) #package allowing for plot  wrapping
+
+dotpl <- dotpl[sapply(dotpl, function(x) inherits(x, "ggplot"))]
+
+#combine plots into 1
+combined_plot <- wrap_plots(dotpl, ncol = 2)
+
+#display combined plot
+print(combined_plot)
+```
+This same workflow can also be applied in KEGG and WikiPathways,
+however it is important to note the clusterProfiler functions require slightly different inputs.
+
+If this is desired, the below code segments could be inserted to replace GO GSEA.
+
+```{r, eval=FALSE}
+# KEGG GSEA ---------------------------------------------------------------
+
+gsek <- lapply(genes,function(vec){
+  data <- gseKEGG(geneList = vec,
+                  organism = "hsa",
+                  pvalueCutoff = 0.05,
+                  minGSSize = 10
+  )
+  return(data)
+})
+
+lapply(names(gsek), function(df){
+  data <- gsek[[df]]@result
+  write.csv(data, file = paste0(out_path,df,"_GSEKEGG_001.csv"))
+})
+
+# WP GSEA -----------------------------------------------------------------
+
+gsew <- lapply(genes,function(vec){
+  data <- gseWP(geneList = vec,
+                organism = "Homo sapiens",
+                pvalueCutoff = 0.05,
+                minGSSize = 10
+  )
+  return(data)
+})
+
+lapply(names(gsew), function(df){
+  data <- gsew[[df]]@result
+  write.csv(data, file = paste0(out_path,df,"_GSEWP_001.csv"))
+})
+
+
+names(gsea) <- names(gr)
+
+
+lapply(names(gsea), function(df){
+  data <- gsea[[df]]@result
+  write.csv(data, file = paste0(out_path,df,"_GSEKEGG_001.csv"))
+})
+```
+
+### Comparative GSEA
+
+*comparecluster* combines a pairwise analysis with GSEA, to characterise the
+overlapping and diverging pathways between multiple treatment groups.
+
+```{r, warning = FALSE, message = FALSE, fig.dim=c(12,12)}
+#comparative GSEA
+
+ck <- compareCluster(geneCluster = genes, #compare gene names in lists
+                     fun = gseGO,
+                     OrgDb = org.Hs.eg.db,
+                     ont = "BP",
+                     pvalueCutoff = 0.05,
+                     minGSSize = 20,
+)
+
+
+options(enrichplot.colours = c("#347EB9","#e06663"))
+dot <- dotplot(ck,
+               color = "NES",
+               showCategory = 5,
+               font.size = 32,
+               split = ".sign",
+               label_format = 75,
+)+ 
+  
+  coord_flip()+ #remove to return to portrait
+  
+  #facet_grid(~.sign,) + #remove this line to homogenise activated and repressed
+  
+  theme(panel.spacing = unit(0.1, "cm",data = NULL),
+        aspect.ratio = 1/3,
+        axis.text.x = element_text(size = 14, angle = 90, vjust = 0.5, hjust = 1),  # Rotate y-axis labels
+        axis.text.y = element_text(size = 18),
+        axis.title.y.left = element_text(vjust = 3),
+        geom_dotplot(binwidth = 50, dotsize = 1.5)
+  )
+
+dot
+```
+
+## Phenotype filtering
+
+Phenotype filtering was performed by intersecting DEG lists with filter lists,
+this same technique was applied for any specified filters, including ETC genes.
+
+```{r fig.dim=c(12,12), message=FALSE, warning=FALSE, results = 'hide', fig.show='hide'}
+
+library(pheatmap)
+
+cytokines <- c("ALL","TNFa","Thrombin","TGFb2") #set treatments
+Phenotypes <- c("inflamm","fibro","angio") #set phenotypes
+
+red2blue <- colorRampPalette(c("#2066b4", "#ffffff", "#b4182a"))(100) #set colour scale
+
+pheno_list <- list() #open an empty list outside of for loop
+
+for (phenotype in Phenotypes){
+  
+  for (cytokine in cytokines) {
+    
+    res_means <-read.delim(paste0("significant_data/",cytokine,"_deg_table_1L2FC_nobaseMean_cutoff_004.csv"), 
+                           header = TRUE, row.names = 1, sep = ",")%>%
+      mutate_all(~replace(., .=="", "no")) # read in DEGs and remove blanks
+    
+    potential_targets <- read.delim(paste0("reference_data/",phenotype,"_Genecard_5.0relevance.csv"), header = TRUE, sep = ",") %>%
+      as.data.frame() #read in filter list
+    
+    pheno_list[[cytokine]] <- merge(res_means, potential_targets, by.x = "symbol", by.y = "Gene.Symbol") #transect DEG and filter list
+    
+    print(paste0(cytokine," ", phenotype," filtered list generated")) #print message to show it worked
+    
+    #write.csv(pheno_list[[cytokine]], file = paste0(out_path,cytokine,"_",phenotype,"_filtered_genes_1L2FC.csv")) # write out a csv
+  
+    }
+ 
+    heat <- lapply(pheno_list, function(cyto) {
+      row.names(cyto) <- cyto$symbol #pheatmap must have gene names in rownames
+      cyto$log2FoldChange <- as.numeric(cyto$log2FoldChange) #select only l2FC values
+      cyto %>%
+        dplyr::select(log2FoldChange) %>% #select only symbols
+        na.omit()
+      
+    })
+    
+    names(heat) <- names(pheno_list) #carry over names
+    
+    heatmaps <- lapply(names(heat), function(cyto) {
+      p <- pheatmap(heat[[cyto]], 
+                    kmeans_k = NA, 
+                    breaks = seq(-3, 3, length.out = 101), 
+                    scale = "none", 
+                    cluster_rows = TRUE,
+                    cluster_cols = FALSE,
+                    clustering_distance_rows = "maximum",  # Corrected parameter name
+                    clustering_method = "complete",
+                    color = red2blue,
+                    show_colnames = FALSE,
+                    fontsize = 14)
+      
+      #ggsave(filename = paste0(out_path, cyto, "_", phenotype, "_DEGs_001.svg"), plot = p[[4]], width = 15, height = (nrow(heat[[cyto]]) * 0.5), units = "cm")
+    })
+    
+    
+    names(heatmaps) <- names(heat)
+    
+    pheno_overlap <- Reduce(function(x, y) merge(x, y, by = "symbol", all = TRUE), pheno_list)
+    pheno_overlap <- pheno_overlap %>% # as the reduce function generates replicate names,
+      setNames(make.unique(names(.)))  # we have to manually change them to be unique
+                                                                     
+    heat_overlap <- pheno_overlap %>%
+      dplyr::select(3,18,33,48)  %>%
+      rename_with(~ c("ALL","TNFa", "Thrombin", "TGFb2")) %>%
+      mutate_all(~replace(., is.na(.), 0)) %>%
+      mutate(across(everything(), as.numeric)) %>%
+      as.matrix
+
+    rownames(heat_overlap) <-pheno_overlap$symbol
+    
+    p_over <- pheatmap(heat_overlap, 
+                       kmeans_k = NA, 
+                       breaks = seq(-3, 3, length.out = 101), 
+                       scale = "none", 
+                       cluster_rows = TRUE,
+                       cluster_cols = FALSE,
+                       clustering_distance_rows = "euclidean",  # Corrected parameter name
+                       clustering_method = "median",
+                       color = red2blue,
+                       show_colnames = TRUE,
+                       fontsize = 14)
+ 
+    #ggsave(filename = paste0(out_path, phenotype,"_overlapped_DEGs_001.svg"), plot = p_over[[4]], width = 15, height = (3 + (nrow(heat[[cyto]]) * 0.5)), units = "cm")
+    #write.csv(pheno_overlap, file = paste0(out_path,cytokine,"_",phenotype,"_filtered_genes_1L2FC.csv"))
+  }
+```
+
+```{r, echo = FALSE,fig.dim=c(20,50)}
+p_over
+```
+
+
+Similarly, phenotype filtering can also be applied to a volcano plot,
+as shown here:
+
+```{r fig.dim=c(12,12), message=FALSE, warning=FALSE}
+
+cytokine = "ALL"
+version = "001"
+
+#volcanomaker <- function(cytokine,version){
+  set.seed(12345)
+
+  res <- results(dds, contrast = c("condition", cytokine, "Control"))
+  sigdeg <- na.omit(res)
+  
+  sigdeg_df<- as.data.frame(sigdeg)
+  
+#Labelling system
+  sigdeg_df$symbol<- mapIds(org.Hs.eg.db,
+                            keys = rownames(sigdeg_df), 
+                            keytype = "ENSEMBL", 
+                            column = "SYMBOL")
+  
+  sigdeg_df <- sigdeg_df %>% 
+    mutate(diffexpressed = case_when(
+      log2FoldChange > 1 & padj < 0.05 ~ "UP",
+      log2FoldChange < -1 & padj < 0.05 ~ "DOWN",
+      between(sigdeg_df$log2FoldChange, -1, 1) ~ "NO",
+      padj > 0.05 ~ 'NO',
+  ))
+  
+  sigdeg_df$padj <- ifelse(sigdeg_df$padj == 0, .Machine$double.xmin, sigdeg_df$padj) #ifelse to replace 0 values in padj with machine minimum
+
+
+filtered_sigdeg_df1 <- sigdeg_df %>%
+    dplyr::filter(diffexpressed != "NO") %>%
+    dplyr::filter(!is.na(symbol))
+  
+  fibr_pt <- read.csv(paste0(ref_path,"fibro_Genecard_5.0relevance.csv"), header= FALSE)
+  
+  fibr_selected <- filtered_sigdeg_df1[filtered_sigdeg_df1$symbol %in% fibr_pt$V1,]
+  
+  inf_pt <- read.csv(paste0(ref_path,"inflamm_Genecard_5.0relevance.csv"), header= FALSE)
+  
+  inf_selected <- filtered_sigdeg_df1[filtered_sigdeg_df1$symbol %in% inf_pt$V1,]
+  
+  angio_pt <- read.csv(paste0(ref_path,"angio_Genecard_5.0relevance.csv"), header= FALSE)
+  
+  angio_selected <- filtered_sigdeg_df1[filtered_sigdeg_df1$symbol %in% angio_pt$V1,]
+  
+  fxi <- fibr_selected[fibr_selected$symbol %in% inf_selected$symbol,]
+  fxa <- fibr_selected[fibr_selected$symbol %in% angio_selected$symbol,]
+  ixa <- inf_selected[inf_selected$symbol %in% angio_selected$symbol,]
+  ixaxf <- fibr_selected[fibr_selected$symbol %in% ixa$symbol,]
+  
+  pheno_sigdeg_df1 <- filtered_sigdeg_df1 %>% #creates a column in data frame which reflects which phenotypes the 
+    mutate(phenotype = case_when(
+      symbol%in% ixaxf$symbol ~ 'fully pleitropic',
+      symbol%in% ixa$symbol ~ 'inflam and fibro',
+      symbol%in%fxa$symbol ~ 'fibro and angio',
+      symbol%in%fxi$symbol ~ 'fibro and inflam',
+      symbol%in%fibr_selected$symbol ~ 'fibro',
+      symbol%in%inf_selected$symbol ~ 'inflam',
+      symbol%in%angio_selected$symbol ~ 'angio',
+      TRUE ~ 'NO'
+    ))
+
+
+  keyvals <- ifelse(sigdeg_df$symbol %in% ixaxf$symbol,"#796261", #all 3
+                    ifelse(sigdeg_df$symbol %in% fxi$symbol,"#ff26fa" , #fibrosis and inflammation only
+                           ifelse(sigdeg_df$symbol %in% fxa$symbol,"#f4ff58", #fibrosis and angiogenesis only
+                                  ifelse(sigdeg_df$symbol %in% ixa$symbol,"#63ff6f", #inflammation and angiogenesis only
+                                         ifelse(sigdeg_df$symbol %in% fibr_selected$symbol, 'purple3', #fibrosis only
+                                                ifelse(sigdeg_df$symbol %in% inf_selected$symbol,"#ff9757", #inflammation only
+                                                       ifelse(sigdeg_df$symbol %in% angio_selected$symbol, "#3affa6", #angiogenesis only
+                                                              ifelse(sigdeg_df$diffexpressed == "DOWN", 'royalblue',
+                                                                     ifelse(sigdeg_df$diffexpressed == "UP", 'red2','grey')))))))))
+  names(keyvals)[keyvals == 'purple3'] <- 'Fibrosis Associated'
+  names(keyvals)[keyvals == 'royalblue'] <- 'Down-Regulated'
+  names(keyvals)[keyvals == 'red2'] <- 'Up-Regulated'
+  names(keyvals)[keyvals == "#ff9757"] <- 'inflammation Associated'
+  names(keyvals)[keyvals == "#3affa6"] <- 'Angiogenesis Associated'
+  names(keyvals)[keyvals == "#ff26fa"] <- 'Fibrosis + Angiogenesis Associated'
+  names(keyvals)[keyvals == "#f4ff58"] <- 'Fibrosis + inflammation Associated'
+  names(keyvals)[keyvals == "#63ff6f"] <- 'inflammation + Angiogenesis Associated'
+  names(keyvals)[keyvals == "#796261"] <- 'All 3'
+  names(keyvals)[keyvals == "grey"] <- 'NS'
+  # Plot variables ----------------------------------------------------------
+unique(keyvals)
+  volc <- EnhancedVolcano(sigdeg_df, 
+                          x = "log2FoldChange", 
+                          y = "padj", 
+                          lab = NA,  # Remove labels for now
+                          title = cytokine,
+                          colCustom = keyvals,
+                          pCutoff = 0.01,
+                          FCcutoff = 1,
+                          ylim = c(-2, 320),
+                          xlim = c(-12, 12),  # Widen x-axis limits
+                          pointSize = 4.0,
+                          parseLabels = TRUE,
+                          max.overlaps = 25)  # Allow more overlaps
+  # Add labels using geom_text_repel
+  volc2 <- volc + geom_label_repel(data = sigdeg_df[sigdeg_df$log2FoldChange < 0 & sigdeg_df$symbol %in% ixaxf$symbol, ],
+                                 aes(x = log2FoldChange, y = -log10(padj), label = symbol),
+                                 size = 5,
+                                 label.size = 0.1,
+                                 box.padding = 1.0,  # Increase box padding
+                                 point.padding = 0.5,  # Increase point padding
+                                 segment.color = 'black',
+                                 segment.size = 0.8,
+                                 nudge_x = -2,
+                                 max.time = 5,
+                                 fill = "lightblue",
+                                 nudge_y = 0.5,# Nudge labels to the left
+                                 max.overlaps = 20)  # Ensure all labels are shown
+  
+  # Add labels for points with positive log2FoldChange
+  volc3 <- volc2 + geom_label_repel(data = sigdeg_df[sigdeg_df$log2FoldChange > 0 & sigdeg_df$symbol %in% ixaxf$symbol, ],
+                                 aes(x = log2FoldChange, y = -log10(padj), label = symbol),
+                                 size = 5,
+                                 label.size = 0.1,
+                                 box.padding = 1,  # Increase box padding
+                                 point.padding = 0.5,  # Increase point padding
+                                 segment.color = 'black',
+                                 fill = "#FF9999",
+                                 segment.size = 0.8,
+                                 nudge_x = 1,
+                                 max.time = 5, # Nudge labels to the right
+                                 max.overlaps = 20)  # Ensure all labels are shown
+                       
+  volc3
+  
 ```
