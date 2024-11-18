@@ -298,9 +298,16 @@ library(svglite) #save SVGs
 Generate PCA using ggplot2 **plotPCA**
 
 ```{r, message = FALSE, warning = FALSE}
+
+#mycols <- c('#9d9da1','#89489b','#3eb548','#4097AB') #colours for DMFu analysis
+
+mycols <- c("#666666","#A6761D","#E6AB02", "#66A61E", "#1B9E77","#E7298A", "#D95F02", "#7570B3") #multi-cyto colours
+
 PCA <- plotPCA(vsdata, intgroup = "condition", ntop = 1000)+
   theme_bw()+ #base theme
-  coord_equal(3)+ #set a plot size
+  coord_equal(4)+ #set a plot size
+  stat_ellipse(aes(group = condition), type = "norm", level = 0.95)+
+  scale_color_manual(values = mycols) +
   labs(title = "Figure 1A", color = "Condition")+ #labels
   theme(plot.title = element_text(hjust=0.5,vjust = 1.5, size = 20, face = "bold", color = "black"), 
         legend.title = element_text(size=14), legend.text = element_text(size=14),
@@ -315,7 +322,7 @@ PCA
 ```
 
 Further style changes were made in an external vector editor to increase legibility for **Figure 1A**, these include: 
-  - Adding of ellipses bounding points 
+  - stylistic adjustment of ellipses  to bound points as a filled object 
   - Adjustments to color scheme 
   - Removal of cocktail group
 
@@ -407,8 +414,12 @@ When running the function, ensure a condition has been established using *metada
              #Padj = 0.05,
             #version = "0L2FC_cutoff_003")
 
+#treatments <- c("VEGF","VEGFDMFu","DMFu") #for DMFu study
 
 cytokines <- c("TGFb1","TGFb2","TNFa","Thrombin","IL6","VEGF","ALL")
+
+
+
 
 for (cytokine in cytokines) {
   significance(condition = "condition",
@@ -1129,7 +1140,6 @@ ck <- compareCluster(geneCluster = genes, #compare gene names in lists
                      minGSSize = 20,
 )
 
-
 options(enrichplot.colours = c("#347EB9","#e06663"))
 dot <- dotplot(ck,
                color = "NES",
@@ -1322,14 +1332,18 @@ filtered_sigdeg_df1 <- sigdeg_df %>%
 
 
   keyvals <- ifelse(sigdeg_df$symbol %in% ixaxf$symbol,"#796261", #all 3
-                    ifelse(sigdeg_df$symbol %in% fxi$symbol,"#ff26fa" , #fibrosis and inflammation only
-                           ifelse(sigdeg_df$symbol %in% fxa$symbol,"#f4ff58", #fibrosis and angiogenesis only
-                                  ifelse(sigdeg_df$symbol %in% ixa$symbol,"#63ff6f", #inflammation and angiogenesis only
-                                         ifelse(sigdeg_df$symbol %in% fibr_selected$symbol, 'purple3', #fibrosis only
-                                                ifelse(sigdeg_df$symbol %in% inf_selected$symbol,"#ff9757", #inflammation only
-                                                       ifelse(sigdeg_df$symbol %in% angio_selected$symbol, "#3affa6", #angiogenesis only
-                                                              ifelse(sigdeg_df$diffexpressed == "DOWN", 'royalblue',
-                                                                     ifelse(sigdeg_df$diffexpressed == "UP", 'red2','grey')))))))))
+                ifelse(sigdeg_df$symbol %in% fxi$symbol,"#ff26fa" , #fibrosis and inflammation only
+                    ifelse(sigdeg_df$symbol %in% fxa$symbol,"#f4ff58", #fibrosis and angiogenesis only
+                        ifelse(sigdeg_df$symbol %in% ixa$symbol,"#63ff6f", #inflammation and angiogenesis only
+                            ifelse(sigdeg_df$symbol %in% fibr_selected$symbol, 'purple3', #fibrosis only
+                                ifelse(sigdeg_df$symbol %in% inf_selected$symbol,"#ff9757", #inflammation only
+                                    ifelse(sigdeg_df$symbol %in% angio_selected$symbol, "#3affa6", #angiogenesis only
+                                        ifelse(sigdeg_df$diffexpressed == "DOWN", 'royalblue',
+                                            ifelse(sigdeg_df$diffexpressed == "UP", 'red2','grey'
+              )))))))))
+  
+  
+  
   names(keyvals)[keyvals == 'purple3'] <- 'Fibrosis Associated'
   names(keyvals)[keyvals == 'royalblue'] <- 'Down-Regulated'
   names(keyvals)[keyvals == 'red2'] <- 'Up-Regulated'
@@ -1340,6 +1354,7 @@ filtered_sigdeg_df1 <- sigdeg_df %>%
   names(keyvals)[keyvals == "#63ff6f"] <- 'inflammation + Angiogenesis Associated'
   names(keyvals)[keyvals == "#796261"] <- 'All 3'
   names(keyvals)[keyvals == "grey"] <- 'NS'
+  
   # Plot variables ----------------------------------------------------------
 unique(keyvals)
   volc <- EnhancedVolcano(sigdeg_df, 
