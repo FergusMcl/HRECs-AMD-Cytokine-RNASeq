@@ -10,50 +10,9 @@ output:
   html_document: default
 ---
 
-```{r Package Installation, include = FALSE}
-#Run this if it is your first time and you may not have all of the necessary packages.
-
-load_packages <- function(pkgs) {
-  res <- sapply(pkgs, function(pkg) {
-    suppressPackageStartupMessages(
-      require(pkg, character.only = TRUE)
-    )
-  })
-  if (any(!res)) {
-    warning("Could not load: ", paste(pkgs[!res], collapse = ", "))
-  }
-  invisible(res)
-}
-
-load_packages(libs)
-
-
-```
-
-
 ```{r setup, include=FALSE}
 # Set wd, check for required packages and load necessary libraries
 setwd("C:/Users/z5259217/OneDrive - UNSW/Desktop/GitHub/HRECs-AMD-Cytokine-RNASeq")
-
-pkgs <- c(
-  "tidyverse",     # Contains multiple packages for general tidiness
-  "magrittr",      # Pipe-friendly helpers
-  "dtplyr",        # data.table backend for dplyr
-  "textshaping",   # Text shaping for graphics devices
-  "WGCNA",         # Weighted Gene Coexpression Network Analysis
-  "RColorBrewer",  # Color palettes
-  "ggplot2",       # Plotting (also in tidyverse)
-  "pheatmap",      # Heatmaps
-  "ggrepel",       # Text repel
-  "svglite",       # Save SVGs
-  "GOplot",        # GO chord plotting
-  "patchwork",      # Combine ggplots
-  "DESeq2",          # Differential Expression Analysis
-  "org.Hs.eg.db",    # Human gene annotation
-  "EnhancedVolcano", # Volcano plots
-  "enrichplot",       # Enrichment plotting
-  "test"
-  )
 
 install_missing_pkgs <- function(pkgs) {
   to_install <- setdiff(pkgs, installed.packages()) #identify what to install
@@ -91,9 +50,30 @@ if(length(load_fail)) {
 }
 }
 
-install_missing_pkgs(pkgs)
+pkgs <- c(
+  "tidyverse",     # Contains multiple packages for general tidiness
+  "magrittr",      # Pipe-friendly helpers
+  "dtplyr",        # data.table backend for dplyr
+  "textshaping",   # Text shaping for graphics devices
+  "impute",        #WGNCA dependency
+  "preprocessCore",#WGCNA dependency
+  "WGCNA",         # Weighted Gene Coexpression Network Analysis
+  "RColorBrewer",  # Color palettes
+  "ggplot2",       # Plotting (also in tidyverse)
+  "pheatmap",      # Heatmaps
+  "ggrepel",       # Text repel
+  "svglite",       # Save SVGs
+  "GOplot",        # GO chord plotting
+  "patchwork",      # Combine ggplots
+  "DESeq2",          # Differential Expression Analysis
+  "GO.db",           # Human gene annotation/enrichplot dependency
+  "org.Hs.eg.db",    # Human gene annotation
+  "EnhancedVolcano", # Volcano plots
+  "enrichplot"       # Enrichment plotting
+  )
 
-BiocManager::install("enrichplot", force = TRUE)
+install_missing_pkgs(pkgs) #if any packages fail to load, you may need to add more packages due to dependency updates
+
 set.seed(12345)
 
 ```
