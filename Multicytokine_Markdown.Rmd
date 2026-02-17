@@ -10,26 +10,90 @@ output:
   html_document: default
 ---
 
-```{r setup, include=FALSE}
-# Load necessary libraries
-setwd("C:/Users/User/Desktop/HRECs-AMD-Cytokine-RNASeq")
-library(tidyverse)  # Contains multiple packages for general tidiness
-library(magrittr)   # Package adding useful functions for pipe operator
-library(dtplyr)     # Package adding useful functions for pipe operator
-library(textshaping)
-library(DESeq2)      # Differential Expression Analysis
-library(WGCNA)       # Weighted Gene Coexpression Network Analysis + Good Gene Check
-library(RColorBrewer)# Color palettes
-library(ggplot2)     # General Plotting package
-library(pheatmap)    # Heatmaps
-library(EnhancedVolcano) #volcano plots
-library(ggrepel)     # Text and point repel
-library(svglite)     # Save SVGs
-library(org.Hs.eg.db)# Gene Annotation package
-library(GOplot)      # GO Chord plotting
-library(enrichplot)  # Enrichment plotting
-library(patchwork)   # Figure combination package
+```{r Package Installation, include = FALSE}
+#Run this if it is your first time and you may not have all of the necessary packages.
 
+load_packages <- function(pkgs) {
+  res <- sapply(pkgs, function(pkg) {
+    suppressPackageStartupMessages(
+      require(pkg, character.only = TRUE)
+    )
+  })
+  if (any(!res)) {
+    warning("Could not load: ", paste(pkgs[!res], collapse = ", "))
+  }
+  invisible(res)
+}
+
+load_packages(libs)
+
+
+```
+
+
+```{r setup, include=FALSE}
+# Set wd, check for required packages and load necessary libraries
+setwd("C:/Users/z5259217/OneDrive - UNSW/Desktop/GitHub/HRECs-AMD-Cytokine-RNASeq")
+
+pkgs <- c(
+  "tidyverse",     # Contains multiple packages for general tidiness
+  "magrittr",      # Pipe-friendly helpers
+  "dtplyr",        # data.table backend for dplyr
+  "textshaping",   # Text shaping for graphics devices
+  "WGCNA",         # Weighted Gene Coexpression Network Analysis
+  "RColorBrewer",  # Color palettes
+  "ggplot2",       # Plotting (also in tidyverse)
+  "pheatmap",      # Heatmaps
+  "ggrepel",       # Text repel
+  "svglite",       # Save SVGs
+  "GOplot",        # GO chord plotting
+  "patchwork",      # Combine ggplots
+  "DESeq2",          # Differential Expression Analysis
+  "org.Hs.eg.db",    # Human gene annotation
+  "EnhancedVolcano", # Volcano plots
+  "enrichplot",       # Enrichment plotting
+  "test"
+  )
+
+install_missing_pkgs <- function(pkgs) {
+  to_install <- setdiff(pkgs, installed.packages()) #identify what to install
+  
+  if (!requireNamespace("BiocManager", quietly = TRUE, dependencies = TRUE)) {
+    install.packages("BiocManager", repos = "https://cloud.r-project.org")
+  }
+  cran_catalog <- rownames(available.packages())
+  #bioc_catalog <- BiocManager::available() not needed as cran is smaller
+  is_cran <- to_install %in% cran_catalog
+  #is_bioc <- to_install %in% bioc_catalog not needed as cran is smaller
+  cran_pkgs <- to_install[is_cran]
+  bioc_pkgs <- setdiff(to_install, cran_pkgs)
+
+  if(length(cran_pkgs)){
+    install.packages(cran_pkgs, quiet = TRUE)
+    message("Installing packages: ", paste(to_install, collapse = ", "))
+  } else {
+    message("All CRAN packages already installed.")
+  }
+  
+  if(length(bioc_pkgs)){
+    BiocManager::install(bioc_pkgs, quietly = TRUE, dependencies = TRUE)
+    message("Installing packages: ", paste(to_install, collapse = ", "))
+  } else {
+    message("All bioconductor packages already installed.")
+  }
+
+load_pkgs <- sapply(pkgs, require, character.only = TRUE, quietly = TRUE)
+load_fail <- names(load_pkgs)[!load_pkgs]
+if(length(load_fail)) {
+  message("Some packages failed to load: ", paste(load_fail, collapse = ", "))
+}else{
+  return("All packages loaded successfully.")
+}
+}
+
+install_missing_pkgs(pkgs)
+
+BiocManager::install("enrichplot", force = TRUE)
 set.seed(12345)
 
 ```
