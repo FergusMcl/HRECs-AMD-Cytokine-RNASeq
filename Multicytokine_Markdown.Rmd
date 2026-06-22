@@ -318,7 +318,7 @@ For future analysis I have used a naming convention here which matches the compa
 
 ```{r}
 
-name <- "important_groups"
+#name <- "important_groups"
 
 #saveRDS(dds, file= paste0(in_path,name,"dds.RDS"))  #unhash to save RDS
 
@@ -327,6 +327,103 @@ name <- "important_groups"
 
 ```
 
+## Check for expression of Endothelial Marker Genes
+
+```{r}
+
+# Pre cut list ------------------------------------------------------------
+
+gene_set <- "AMD_voigt"
+markers <- "choroid_endo"
+
+
+# Filter based on lists ---------------------------------------------------
+
+  #Read in data
+data <- normcounts #Read in normalised counts
+  #annotate with current gene symbols
+data <- data %>%
+  mutate("symbol" = mapIds(org.Hs.eg.db,
+                           keys = rownames(data), 
+                           keytype = "ENSEMBL", 
+                           column = "SYMBOL"))%>%  #read in gene symbols
+  relocate(symbol) %>%  #relocate symbols to 2nd column
+  mutate(X = NULL) #remove ensembl IDs
+  #use if pulling in the fibro data
+#colnames(data)[colnames(data) == "IL.6_1"] <- "symbol"
+  
+#data <- data %>%
+  #dplyr::relocate(symbol)%>%
+  #mutate(ID = NULL)
+  
+filt <- read.csv(paste0("reference_data/full_lists.csv"), header = TRUE) #Read in filters with each filter as a seperate column
+
+
+Filters <- lapply(filt, function(x) data.frame(x)) #split each column into its own dataframe
+
+#create a list of filter names to loop through
+filters <- colnames(filt)
+i <- "EC.Marker"
+lists
+#loop through filters
+
+for (i in filters) {
+
+  v <- gsub(" ","", gsub("[ \t]", "",(filt[[i]]))) # Trim whitespace
+  v <- v[v != ""]# Remove empty strings
+  df <- data[data$symbol %in% v, ]
+  
+  missing_symbols <- setdiff(v, data$symbol) #check for values in list that are missing
+
+  if(length(missing_symbols)>0){
+    print(paste0("Expression data for: ", missing_symbols," is missing from the normalised dataset, please confirm symbols if symbols are correct or if values are 0"))
+      missing_df <- tibble(symbol = missing_symbols)
+      missing_df[, colnames(data)[-1]] <- 0
+  } else{
+      missing_df <- NULL
+    }
+
+  df <- bind_rows(df, missing_df)
+
+df_long <- df %>%
+  pivot_longer(cols = -symbol, names_to = "Treatment", values_to = "Expression") %>%
+  mutate(Treatment = gsub("_\\d+", "", Treatment)) %>%
+  mutate(Treatment = gsub("All", "Cocktail", Treatment)) %>%
+  group_by(symbol, Treatment) %>% #change to long form 
+  mutate(RelativeExpression = (Expression / sum(Expression))*100)  #Change to relative expression calculation
+
+df_long$Treatment <- factor(df_long$Treatment, #reorder to match the rest of the paper
+                            levels = c("Control","VEGF","IL.6","TGFb1","TGFb2", "TNFa", "Thrombin", "Cocktail"))
+
+boxplot <- ggplot(df_long, aes(x = Treatment, y = Expression, fill = Treatment)) +
+                  geom_boxplot(outliers = FALSE) +
+                  facet_wrap(~ symbol, scales = "free", nrow = 1, ncol = 4) +
+                  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust= 0.5, size = 18),
+                        axis.text.y = element_text(size = 18),
+                        strip.text = element_text(size = 26),
+                        legend.title = element_text(size = 26),
+                        legend.text = element_text(size = 22),
+                        legend.box.background = element_rect(fill = NULL, colour = "grey", linewidth = 2)) +
+                  labs(title = paste0(i, " associated gene expression" ),
+                       x = NULL, 
+                       y = "Expression") +
+                  scale_fill_manual(values = c("Control" = "#666666",
+                                               "VEGF" = "#7570B3",
+                                               "IL.6" = "#E6AB02",
+                                               "TGFb1" = "#66A61E",
+                                               "TGFb2" = "#1B9E77", 
+                                               "TNFa" = "#D95F02", 
+                                               "Thrombin" = "#E7298A", 
+                                               "Cocktail" = "#A6761D"))+
+  expand_limits(y=100)
+boxplot
+length(v)
+ggsave(paste0(out_path,i,"_relexpr_plot2.svg"), plot = boxplot, width = 35, height = 7.5*(length(v)/4), units = )
+  }
+
+
+
+```
 
 Generating an average, normalised counts data frame and variance stabilised
 transformation data frame

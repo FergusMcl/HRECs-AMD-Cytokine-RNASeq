@@ -1,5 +1,6 @@
 
 library(pheatmap)
+setwd("C:/Users/z5259217/OneDrive - UNSW/Desktop/GitHub/HRECs-AMD-Cytokine-RNASeq")
 
 cytokines <- c("ALL") #set treatments
 
@@ -19,7 +20,7 @@ red2blue <- colorRampPalette(c("#2066b4", "#ffffff", "#b4182a"))(100) #set colou
     
     print(paste0(cytokine," filtered list generated")) #print message to show it worked
     
-    #write.csv(pheno_list[[cytokine]], file = paste0(out_path,cytokine,"_",phenotype,"_filtered_genes_1L2FC.csv")) # write out a csv
+    write.csv(merged_dat, file = paste0(out_path,cytokine,"_filtered_genes_1L2FC.csv")) # write out a csv
   }
   
   heat <- merged_dat
@@ -74,4 +75,8 @@ red2blue <- colorRampPalette(c("#2066b4", "#ffffff", "#b4182a"))(100) #set colou
   ggsave(filename = paste0(out_path, cytokine,"_scRNAFiltered_DEGs_001.svg"), plot = p_over[[4]], width = 15, height = (3 + (nrow(heat[[cyto]]) * 0.5)), units = "cm")
   #write.csv(pheno_overlap, file = paste0(out_path,cytokine,"_",phenotype,"_filtered_genes_1L2FC.csv"))
 }
+
 ```
+
+
+
